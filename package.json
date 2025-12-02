@@ -1,0 +1,35 @@
+{
+  "name": "interview-prep-buddy",
+  "version": "1.0.0",
+  "description": "AI-first desktop app for interview preparation built with Electron, React, and TypeScript.",
+  "main": "dist/electron/main.js",
+  "scripts": {
+    "dev": "concurrently \"npm:dev:renderer\" \"npm:dev:electron\"",
+    "dev:renderer": "cd renderer && vite",
+    "dev:electron": "cross-env NODE_ENV=development WAIT_ON_TIMEOUT=30000 TS_NODE_TRANSPILE_ONLY=1 wait-on tcp:5173 && node ./run-electron.js ./electron/dev.js",
+    "build": "npm run build:renderer && tsc -p electron/tsconfig.json",
+    "build:renderer": "cd renderer && vite build",
+    "start": "npm run build && node ./run-electron.js .",
+    "lint": "eslint \"renderer/src/**/*.{ts,tsx}\"",
+    "typecheck": "tsc -p renderer/tsconfig.json --noEmit && tsc -p electron/tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "electron": "28.2.0",
+    "openai": "4.28.4",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "20.11.24",
+    "@types/react": "18.2.64",
+    "@types/react-dom": "18.2.20",
+    "concurrently": "8.2.2",
+    "cross-env": "7.0.3",
+    "eslint": "8.57.0",
+    "ts-node": "10.9.2",
+    "typescript": "5.3.3",
+    "vite": "5.0.12",
+    "wait-on": "7.2.0",
+    "@vitejs/plugin-react": "4.2.1"
+  }
+}

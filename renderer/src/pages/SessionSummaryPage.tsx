@@ -1,0 +1,116 @@
+import React, { useMemo, useState } from 'react';
+import { QAResult, SessionRecord } from '../../../shared/types';
+
+interface Props {
+  session: SessionRecord;
+  onRestart: () => void;
+}
+
+function QAItem({ item }: { item: QAResult }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="list-card">
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <strong>{item.question.text}</strong>
+          <div className="muted-text">Score: {item.feedback.score} / 10</div>
+        </div>
+        <button className="subtle-button" type="button" onClick={() => setOpen((v) => !v)}>
+          {open ? 'Hide' : 'Expand'}
+        </button>
+      </div>
+      {open && (
+        <div className="model-answer" style={{ marginTop: 10 }}>
+          <div style={{ marginBottom: 6 }}>
+            <strong>Your answer</strong>
+            <p className="muted-text">{item.answerText}</p>
+          </div>
+          <div style={{ marginBottom: 6 }}>
+            <strong>Strengths</strong>
+            <ul className="feedback-list">
+              {item.feedback.strengths.map((s: string, idx: number) => (
+                <li key={idx}>{s}</li>
+              ))}
+            </ul>
+          </div>
+          <div style={{ marginBottom: 6 }}>
+            <strong>Improvements</strong>
+            <ul className="feedback-list">
+              {item.feedback.improvements.map((s: string, idx: number) => (
+                <li key={idx}>{s}</li>
+              ))}
+            </ul>
+          </div>
+          <div>
+            <strong>Model answer</strong>
+            <p>{item.feedback.modelAnswer}</p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function SessionSummaryPage({ session, onRestart }: Props) {
+  const average = useMemo(() => {
+    if (!session.results.length) return 'N/A';
+    const total = session.results.reduce((acc: number, r: QAResult) => acc + r.feedback.score, 0);
+    return (total / session.results.length).toFixed(1);
+  }, [session.results]);
+
+  return (
+    <div>
+      <div className="top-bar">
+        <div>
+          <div className="badge">Session summary</div>
+          <h2>
+            {session.userProfile.domain} · {session.userProfile.experienceLevel} · {session.userProfile.sessionType}
+          </h2>
+        </div>
+        <button onClick={onRestart}>Start new session</button>
+      </div>
+
+      <div className="split">
+        <div className="card">
+          <div className="section-title">
+            <h3>Scores</h3>
+            <div className="badge">{session.results.length} questions</div>
+          </div>
+          <div className="score-card">
+            <div className="score-label">Average score</div>
+            <div className="score-value">{average}</div>
+            <div className="score-out-of">/ 10</div>
+          </div>
+
+          <div className="grid-metrics" style={{ marginTop: 14 }}>
+            <div className="metric">
+              <strong>Started</strong>
+              <span className="muted-text">{new Date(session.startedAt).toLocaleString()}</span>
+            </div>
+            <div className="metric">
+              <strong>Last activity</strong>
+              <span className="muted-text">{new Date(session.updatedAt).toLocaleString()}</span>
+            </div>
+            <div className="metric">
+              <strong>Target</strong>
+              <span className="muted-text">{session.userProfile.targetCompany || 'Not specified'}</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="card">
+          <div className="section-title">
+            <h3>Review</h3>
+            <div className="badge">Detailed Q/A</div>
+          </div>
+          <div>
+            {session.results.length === 0 && <div className="muted-text">No answered questions yet.</div>}
+            {session.results.map((result: QAResult) => (
+              <QAItem key={result.question.id} item={result} />
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
