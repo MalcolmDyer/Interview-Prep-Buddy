@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ApiKeyStatus, QAResult, SessionRecord, UserProfile } from '../../shared/types';
+import { QAResult, SessionRecord, UserProfile } from '../../shared/types';
 import OnboardingPage from './pages/OnboardingPage';
 import InterviewSessionPage from './pages/InterviewSessionPage';
 import SessionSummaryPage from './pages/SessionSummaryPage';
@@ -45,27 +45,10 @@ export default function App() {
   const [sessions, setSessions] = useState<SessionRecord[]>(() => readSessions());
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(() => sessions[0]?.id ?? null);
   const [view, setView] = useState<View>(() => (sessions[0] ? 'session' : 'onboarding'));
-  const [apiKeyStatus, setApiKeyStatus] = useState<ApiKeyStatus>({ hasKey: false });
-  const [loadingKeyStatus, setLoadingKeyStatus] = useState(true);
-  const [keyError, setKeyError] = useState<string | null>(null);
 
   useEffect(() => {
     persistSessions(sessions);
   }, [sessions]);
-
-  useEffect(() => {
-    const fetchStatus = async () => {
-      try {
-        const status = await window.ipcApi.getApiKeyStatus();
-        setApiKeyStatus(status);
-      } catch (err) {
-        setKeyError((err as Error).message);
-      } finally {
-        setLoadingKeyStatus(false);
-      }
-    };
-    fetchStatus();
-  }, []);
 
   const currentSession = useMemo(
     () => sessions.find((s) => s.id === currentSessionId) || null,
@@ -98,23 +81,9 @@ export default function App() {
     setView('onboarding');
   };
 
-  const handleApiKeySave = async (apiKey: string) => {
-    await window.ipcApi.saveApiKey(apiKey);
-    setApiKeyStatus({ hasKey: true });
-  };
-
   return (
     <div className="layout">
-      {view === 'onboarding' && (
-        <OnboardingPage
-          onStart={handleStart}
-          lastSession={sessions[0] ?? null}
-          apiKeyStatus={apiKeyStatus}
-          onSaveApiKey={handleApiKeySave}
-          loadingKeyStatus={loadingKeyStatus}
-          keyError={keyError}
-        />
-      )}
+      {view === 'onboarding' && <OnboardingPage onStart={handleStart} lastSession={sessions[0] ?? null} />}
 
       {view === 'session' && currentSession && (
         <InterviewSessionPage

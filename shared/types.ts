@@ -50,7 +50,3 @@ export interface EvaluateAnswerParams {
   answerText: string;
   userProfile: UserProfile;
 }
-
-export interface ApiKeyStatus {
-  hasKey: boolean;
-}

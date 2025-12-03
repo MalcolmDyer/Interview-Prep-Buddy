@@ -16,5 +16,5 @@
     "outDir": "dist",
     "composite": true
   },
-  "include": ["electron/**/*.ts", "shared/**/*.ts"]
+  "include": ["electron/**/*.ts", "shared/**/*.ts", "proxy/**/*.ts"]
 }

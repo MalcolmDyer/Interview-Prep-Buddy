@@ -1,13 +1,11 @@
 import { app, BrowserWindow, ipcMain, shell } from 'electron';
 import path from 'path';
-import fs from 'fs';
 import { randomUUID } from 'crypto';
-import { GenerateQuestionParams, EvaluateAnswerParams, Feedback, Question, ApiKeyStatus } from '../shared/types';
+import { GenerateQuestionParams, EvaluateAnswerParams, Feedback, Question } from '../shared/types';
 
 const isDev = process.env.NODE_ENV === 'development';
 const rendererDevUrl = 'http://localhost:5173';
-let configPath: string | null = null;
-let cachedStoredKey: string | null = null;
+const proxyBase = (process.env.AI_PROXY_URL || process.env.PROXY_BASE_URL || '').replace(/\/$/, '');
 
 const domainGuides: Record<string, string> = {
   'software engineering':
@@ -17,52 +15,19 @@ const domainGuides: Record<string, string> = {
   finance: 'Stress risk controls, quantitative rigor, regulatory awareness, and precision with data/figures.'
 };
 
-function ensureConfigPath(): string {
-  if (configPath) return configPath;
-  configPath = path.join(app.getPath('userData'), 'ipb-config.json');
-  return configPath;
-}
-
-function readStoredKey(): string | null {
-  if (cachedStoredKey) return cachedStoredKey;
-  try {
-    const filePath = ensureConfigPath();
-    if (!fs.existsSync(filePath)) return null;
-    const raw = fs.readFileSync(filePath, 'utf-8');
-    const parsed = JSON.parse(raw) as { apiKey?: string };
-    cachedStoredKey = parsed.apiKey || null;
-    return cachedStoredKey;
-  } catch {
-    return null;
+function getProxyBase(): string {
+  if (!proxyBase) {
+    throw new Error('AI proxy URL missing. Set AI_PROXY_URL or PROXY_BASE_URL (e.g., https://your-proxy.example.com).');
   }
-}
-
-function persistApiKey(apiKey: string): void {
-  const filePath = ensureConfigPath();
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, JSON.stringify({ apiKey }), { mode: 0o600 });
-  cachedStoredKey = apiKey;
-}
-
-function getApiKey(): string {
-  const envKey = process.env.OPENAI_API_KEY || process.env.AI_API_KEY;
-  const storedKey = readStoredKey();
-  const key = envKey || storedKey;
-  if (!key) {
-    throw new Error('OPENAI_API_KEY (or AI_API_KEY) is not set. Add it to your environment or set it in the app.');
-  }
-  return key;
+  return proxyBase;
 }
 
 async function callChatCompletion(messages: Array<{ role: 'system' | 'user'; content: string }>, temperature = 0.4): Promise<string> {
-  const apiKey = getApiKey();
   const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
-
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+  const response = await fetch(`${getProxyBase()}/chat`, {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`
+      'Content-Type': 'application/json'
     },
     body: JSON.stringify({
       model,
@@ -78,9 +43,9 @@ async function callChatCompletion(messages: Array<{ role: 'system' | 'user'; con
   }
 
   const data = await response.json();
-  const content: string | undefined = data.choices?.[0]?.message?.content;
+  const content: string | undefined = data.content || data.choices?.[0]?.message?.content;
   if (!content) {
-    throw new Error('OpenAI response missing content');
+    throw new Error('Proxy response missing content');
   }
   return content.trim();
 }
@@ -216,16 +181,4 @@ ipcMain.handle('ai:generateQuestion', async (_event, params: GenerateQuestionPar
 
 ipcMain.handle('ai:evaluateAnswer', async (_event, params: EvaluateAnswerParams) => {
   return evaluateAnswer(params);
-});
-
-ipcMain.handle('config:getStatus', async (): Promise<ApiKeyStatus> => {
-  const hasKey = Boolean(process.env.OPENAI_API_KEY || process.env.AI_API_KEY || readStoredKey());
-  return { hasKey };
-});
-
-ipcMain.handle('config:saveKey', async (_event, apiKey: string) => {
-  if (!apiKey || apiKey.trim().length < 10) {
-    throw new Error('API key appears invalid.');
-  }
-  persistApiKey(apiKey.trim());
 });
