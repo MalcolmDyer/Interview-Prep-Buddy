@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { Request, Response } from 'express';
 import cors from 'cors';
 
 const app = express();
@@ -13,7 +13,7 @@ if (!apiKey) {
   console.warn('Warning: OPENAI_API_KEY (or AI_API_KEY) is not set. Proxy will return 500.');
 }
 
-app.post('/chat', async (req, res) => {
+app.post('/chat', async (req: Request, res: Response) => {
   try {
     if (!apiKey) {
       return res.status(500).json({ error: 'API key missing on proxy.' });
@@ -56,7 +56,7 @@ app.post('/chat', async (req, res) => {
   }
 });
 
-app.get('/health', (_req, res) => {
+app.get('/health', (_req: Request, res: Response) => {
   res.json({ ok: true, model });
 });
 
