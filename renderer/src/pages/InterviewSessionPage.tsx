@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Feedback, QAResult, Question, SessionRecord } from '../../../shared/types';
 
 interface Props {
@@ -15,13 +15,82 @@ export default function InterviewSessionPage({ session, onSaveResult, onEndSessi
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [modelOpen, setModelOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [speechError, setSpeechError] = useState<string | null>(null);
+  const [speaking, setSpeaking] = useState(false);
+  const [listening, setListening] = useState(false);
+  const recognitionRef = useRef<any>(null);
+
+  const canSpeak = typeof window !== 'undefined' && 'speechSynthesis' in window;
+  const canListen =
+    typeof window !== 'undefined' &&
+    ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
 
   const previousQuestions = useMemo(() => session.results.map((r: QAResult) => r.question), [session.results]);
+
+  const stopListening = useCallback(() => {
+    const recognition = recognitionRef.current;
+    if (recognition) {
+      recognition.onresult = null;
+      recognition.onerror = null;
+      recognition.onend = null;
+      recognition.stop();
+    }
+    recognitionRef.current = null;
+    setListening(false);
+  }, []);
+
+  const speakQuestion = useCallback(() => {
+    if (!canSpeak || !currentQuestion) return;
+    setSpeechError(null);
+    setSpeaking(true);
+    const utterance = new SpeechSynthesisUtterance(currentQuestion.text);
+    utterance.lang = 'en-US';
+    utterance.onend = () => setSpeaking(false);
+    utterance.onerror = () => {
+      setSpeaking(false);
+      setSpeechError('Unable to read question aloud.');
+    };
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(utterance);
+  }, [canSpeak, currentQuestion]);
+
+  const startListening = useCallback(() => {
+    if (!canListen || listening) return;
+    setSpeechError(null);
+    const RecognitionCtor = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!RecognitionCtor) return;
+    stopListening();
+    const recognition = new RecognitionCtor();
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.lang = 'en-US';
+    recognition.onresult = (event: any) => {
+      const transcript = Array.from(event.results)
+        .map((r: any) => r[0]?.transcript || '')
+        .join(' ')
+        .trim();
+      if (transcript) setAnswerText(transcript);
+    };
+    recognition.onerror = (event: any) => {
+      setSpeechError(event.error ? `Voice input error: ${event.error}` : 'Voice input error');
+      setListening(false);
+    };
+    recognition.onend = () => setListening(false);
+    recognition.start();
+    recognitionRef.current = recognition;
+    setListening(true);
+  }, [canListen, listening, stopListening]);
 
   const loadQuestion = async () => {
     setLoadingQuestion(true);
     setError(null);
+    setSpeechError(null);
     setModelOpen(false);
+    if (canSpeak) {
+      window.speechSynthesis.cancel();
+      setSpeaking(false);
+    }
+    stopListening();
     try {
       const question = await window.ipcApi.generateQuestion({
         domain: session.userProfile.domain,
@@ -41,6 +110,7 @@ export default function InterviewSessionPage({ session, onSaveResult, onEndSessi
 
   const handleEvaluate = async () => {
     if (!currentQuestion || !answerText.trim()) return;
+    stopListening();
     setEvaluating(true);
     setError(null);
     try {
@@ -65,6 +135,13 @@ export default function InterviewSessionPage({ session, onSaveResult, onEndSessi
     loadQuestion();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.id]);
+
+  useEffect(() => {
+    return () => {
+      if (canSpeak) window.speechSynthesis.cancel();
+      stopListening();
+    };
+  }, [canSpeak, stopListening]);
 
   const avgScore = useMemo(() => {
     if (!session.results.length) return null;
@@ -91,9 +168,19 @@ export default function InterviewSessionPage({ session, onSaveResult, onEndSessi
         <div className="card">
           <div className="section-title">
             <h3>Question</h3>
-            <button className="subtle-button" type="button" onClick={loadQuestion} disabled={loadingQuestion}>
-              {loadingQuestion ? 'Generating…' : 'Next question'}
-            </button>
+            <div className="chip-row">
+              <button className="subtle-button" type="button" onClick={loadQuestion} disabled={loadingQuestion}>
+                {loadingQuestion ? 'Generating…' : 'Next question'}
+              </button>
+              <button
+                className="subtle-button"
+                type="button"
+                onClick={speakQuestion}
+                disabled={!canSpeak || loadingQuestion || !currentQuestion || speaking}
+              >
+                {speaking ? 'Playing…' : 'Read aloud'}
+              </button>
+            </div>
           </div>
           <div className="list-card">
             {loadingQuestion && <div className="muted-text">Generating question…</div>}
@@ -111,14 +198,27 @@ export default function InterviewSessionPage({ session, onSaveResult, onEndSessi
             />
           </div>
 
-          <div style={{ marginTop: 12, display: 'flex', gap: 10 }}>
+          <div style={{ marginTop: 12, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
             <button type="button" onClick={handleEvaluate} disabled={!answerText.trim() || evaluating || loadingQuestion}>
               {evaluating ? 'Scoring…' : 'Submit answer'}
             </button>
             <button type="button" className="subtle-button" onClick={() => setAnswerText('')} disabled={evaluating}>
               Clear
             </button>
+            <button
+              type="button"
+              className="subtle-button"
+              onClick={listening ? stopListening : startListening}
+              disabled={!canListen || evaluating || loadingQuestion}
+            >
+              {listening ? 'Stop voice input' : 'Speak answer'}
+            </button>
           </div>
+          {speechError && (
+            <div className="badge" style={{ background: 'rgba(248,113,113,0.12)', color: '#fecdd3' }}>
+              {speechError}
+            </div>
+          )}
           {error && <div className="badge" style={{ background: 'rgba(248,113,113,0.12)', color: '#fecdd3' }}>{error}</div>}
         </div>
 

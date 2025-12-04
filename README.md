@@ -5,6 +5,7 @@ AI-first desktop app (Electron + React + TypeScript) that generates interview qu
 ## Features
 - Tailor sessions by domain, seniority, session type, and target company.
 - Live question generation plus automatic scoring with strengths, improvements, and model answers.
+- Questions can be read aloud; optionally dictate answers with your voice.
 - Session history stored locally so you can review past Q/A.
 - Ships with a lightweight OpenAI proxy for local development.
 
@@ -27,6 +28,11 @@ AI-first desktop app (Electron + React + TypeScript) that generates interview qu
    ```
    - `npm run dev` runs Vite for the renderer and launches Electron after the dev server is ready.
    - You can also set `OPENAI_MODEL` to override the default `gpt-4o-mini`.
+
+## Voice controls
+- Click **Read aloud** in a session to have the current question spoken via the Web Speech API.
+- Click **Speak answer** to dictate your response; the text area will fill with the transcribed text. Click again to stop listening.
+- Voice playback/input depends on OS/browser-level speech APIs being available in your Electron runtime; grant microphone permission when prompted.
 
 ## Production build and run
 ```bash
