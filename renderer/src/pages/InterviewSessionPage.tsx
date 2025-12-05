@@ -19,6 +19,7 @@ export default function InterviewSessionPage({ session, onSaveResult, onEndSessi
   const [speaking, setSpeaking] = useState(false);
   const [listening, setListening] = useState(false);
   const [textMode, setTextMode] = useState(false);
+  const [viewMode, setViewMode] = useState<'question' | 'feedback'>('question');
   const recognitionRef = useRef<any>(null);
 
   const canSpeak = typeof window !== 'undefined' && 'speechSynthesis' in window;
@@ -88,6 +89,7 @@ export default function InterviewSessionPage({ session, onSaveResult, onEndSessi
     setSpeechError(null);
     setModelOpen(false);
     setTextMode(false);
+    setViewMode('question');
     if (canSpeak) {
       window.speechSynthesis.cancel();
       setSpeaking(false);
@@ -123,6 +125,7 @@ export default function InterviewSessionPage({ session, onSaveResult, onEndSessi
       });
       setFeedback(fb);
       onSaveResult({ question: currentQuestion, answerText, feedback: fb });
+      setViewMode('feedback');
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -134,6 +137,7 @@ export default function InterviewSessionPage({ session, onSaveResult, onEndSessi
     setCurrentQuestion(null);
     setFeedback(null);
     setAnswerText('');
+    setViewMode('question');
     loadQuestion();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.id]);
@@ -163,13 +167,13 @@ export default function InterviewSessionPage({ session, onSaveResult, onEndSessi
           </div>
           <div className="chip-row">
             {avgScore && <div className="badge">Avg: {avgScore}</div>}
-            <button className="subtle-button" onClick={onEndSession}>End</button>
+            <button className="subtle-button" onClick={onEndSession}>End Session</button>
           </div>
         </div>
       </div>
 
-      <div className="split">
-        <div className="card stack" style={{ gap: 12 }}>
+      {viewMode === 'question' && (
+        <div className="card stack fade-in-card" style={{ gap: 12 }}>
           <div className="section-title">
             <h3>Question</h3>
             <div className="chip-row">
@@ -264,51 +268,58 @@ export default function InterviewSessionPage({ session, onSaveResult, onEndSessi
           )}
           {error && <div className="badge" style={{ background: 'rgba(248,113,113,0.12)', color: '#fecdd3' }}>{error}</div>}
         </div>
+      )}
 
-        <div className="card stack" style={{ gap: 12 }}>
+      {viewMode === 'feedback' && feedback && (
+        <div className="card stack fade-in-card" style={{ gap: 12 }}>
           <div className="section-title">
             <h3>Feedback</h3>
             <div className="badge">Live scoring</div>
           </div>
 
-          {feedback ? (
-            <div>
-              <div className="score-card">
-                <div className="score-label">Score</div>
-                <div className="score-value">{feedback.score}</div>
-                <div className="score-out-of">/ 10</div>
-              </div>
+          <div className="score-card">
+            <div className="score-label">Score</div>
+            <div className="score-value">{feedback.score}</div>
+            <div className="score-out-of">/ 10</div>
+          </div>
 
-              <div style={{ marginTop: 16 }}>
-                <h4>Strengths</h4>
-                <ul className="feedback-list">
-                  {feedback.strengths.map((s: string, idx: number) => (
-                    <li key={idx}>{s}</li>
-                  ))}
-                </ul>
-              </div>
+          <div style={{ marginTop: 16 }}>
+            <h4>Strengths</h4>
+            <ul className="feedback-list">
+              {feedback.strengths.map((s: string, idx: number) => (
+                <li key={idx}>{s}</li>
+              ))}
+            </ul>
+          </div>
 
-              <div style={{ marginTop: 12 }}>
-                <h4>Improvements</h4>
-                <ul className="feedback-list">
-                  {feedback.improvements.map((s: string, idx: number) => (
-                    <li key={idx}>{s}</li>
-                  ))}
-                </ul>
-              </div>
+          <div style={{ marginTop: 12 }}>
+            <h4>Improvements</h4>
+            <ul className="feedback-list">
+              {feedback.improvements.map((s: string, idx: number) => (
+                <li key={idx}>{s}</li>
+              ))}
+            </ul>
+          </div>
 
-              <div style={{ marginTop: 14 }}>
-                <button className="subtle-button" type="button" onClick={() => setModelOpen((v) => !v)}>
-                  {modelOpen ? 'Hide model answer' : 'Show model answer'}
-                </button>
-                {modelOpen && <div className="model-answer">{feedback.modelAnswer}</div>}
-              </div>
-            </div>
-          ) : (
-            <div className="muted-text">Submit an answer to see scored feedback.</div>
-          )}
+          <div style={{ marginTop: 14 }}>
+            <button className="subtle-button" type="button" onClick={() => setModelOpen((v) => !v)}>
+              {modelOpen ? 'Hide model answer' : 'Show model answer'}
+            </button>
+            {modelOpen && <div className="model-answer">{feedback.modelAnswer}</div>}
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <button
+              type="button"
+              onClick={loadQuestion}
+              disabled={loadingQuestion}
+              style={{ alignSelf: 'flex-end' }}
+            >
+              {loadingQuestion ? 'Loading…' : 'Next question'}
+            </button>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
