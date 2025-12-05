@@ -50,6 +50,28 @@ async function callChatCompletion(messages: Array<{ role: 'system' | 'user'; con
   return content.trim();
 }
 
+async function transcribeAudio(audioBase64: string, mimeType?: string): Promise<string> {
+  const response = await fetch(`${getProxyBase()}/transcribe`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ audioBase64, mimeType })
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Transcription failed: ${response.status} ${text}`);
+  }
+
+  const data = await response.json();
+  const text = data?.text;
+  if (!text || typeof text !== 'string') {
+    throw new Error('Transcription response missing text');
+  }
+  return text;
+}
+
 function parseFeedbackResponse(raw: string): Feedback {
   const cleaned = raw
     .replace(/```json/gi, '```')
@@ -181,4 +203,8 @@ ipcMain.handle('ai:generateQuestion', async (_event, params: GenerateQuestionPar
 
 ipcMain.handle('ai:evaluateAnswer', async (_event, params: EvaluateAnswerParams) => {
   return evaluateAnswer(params);
+});
+
+ipcMain.handle('ai:transcribeAudio', async (_event, payload: { audioBase64: string; mimeType?: string }) => {
+  return transcribeAudio(payload.audioBase64, payload.mimeType);
 });

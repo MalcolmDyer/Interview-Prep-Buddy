@@ -1,6 +1,16 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Feedback, QAResult, Question, SessionRecord } from '../../../shared/types';
 
+const arrayBufferToBase64 = (buffer: ArrayBuffer) => {
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+  const len = bytes.byteLength;
+  for (let i = 0; i < len; i += 1) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+};
+
 interface Props {
   session: SessionRecord;
   onSaveResult: (result: QAResult) => void;
@@ -8,6 +18,7 @@ interface Props {
 }
 
 export default function InterviewSessionPage({ session, onSaveResult, onEndSession }: Props) {
+  const MIN_CHUNK_BYTES = 16000;
   const [currentQuestion, setCurrentQuestion] = useState<Question | null>(null);
   const [answerText, setAnswerText] = useState('');
   const [loadingQuestion, setLoadingQuestion] = useState(false);
@@ -17,28 +28,31 @@ export default function InterviewSessionPage({ session, onSaveResult, onEndSessi
   const [error, setError] = useState<string | null>(null);
   const [speechError, setSpeechError] = useState<string | null>(null);
   const [speaking, setSpeaking] = useState(false);
-  const [listening, setListening] = useState(false);
+  const [recording, setRecording] = useState(false);
   const [textMode, setTextMode] = useState(false);
   const [viewMode, setViewMode] = useState<'question' | 'feedback'>('question');
-  const recognitionRef = useRef<any>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const activeStreamRef = useRef<MediaStream | null>(null);
+  const pendingChunksRef = useRef<Array<{ blob: Blob; attempts: number }>>([]);
+  const transcribingRef = useRef(false);
 
   const canSpeak = typeof window !== 'undefined' && 'speechSynthesis' in window;
-  const canListen =
-    typeof window !== 'undefined' &&
-    ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
+  const canRecord = typeof window !== 'undefined' && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
 
   const previousQuestions = useMemo(() => session.results.map((r: QAResult) => r.question), [session.results]);
 
-  const stopListening = useCallback(() => {
-    const recognition = recognitionRef.current;
-    if (recognition) {
-      recognition.onresult = null;
-      recognition.onerror = null;
-      recognition.onend = null;
-      recognition.stop();
+  const stopRecording = useCallback(() => {
+    const recorder = mediaRecorderRef.current;
+    if (recorder && recorder.state !== 'inactive') {
+      recorder.stop();
     }
-    recognitionRef.current = null;
-    setListening(false);
+    mediaRecorderRef.current = null;
+    if (activeStreamRef.current) {
+      activeStreamRef.current.getTracks().forEach((t) => t.stop());
+      activeStreamRef.current = null;
+    }
+    setRecording(false);
+    transcribingRef.current = false;
   }, []);
 
   const speakQuestion = useCallback(() => {
@@ -56,32 +70,102 @@ export default function InterviewSessionPage({ session, onSaveResult, onEndSessi
     window.speechSynthesis.speak(utterance);
   }, [canSpeak, currentQuestion]);
 
-  const startListening = useCallback(() => {
-    if (!canListen || listening) return;
+  const arrayBufferToBase64 = (buffer: ArrayBuffer) => {
+    let binary = '';
+    const bytes = new Uint8Array(buffer);
+    const len = bytes.byteLength;
+    for (let i = 0; i < len; i += 1) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary);
+  };
+
+  const drainTranscriptionQueue = useCallback(async () => {
+    if (transcribingRef.current) return;
+    if (!pendingChunksRef.current.length) return;
+
+    let chunks: Blob[] = [];
+    let size = 0;
+    let attempt = 0;
+    while (pendingChunksRef.current.length && size < MIN_CHUNK_BYTES) {
+      const { blob, attempts } = pendingChunksRef.current.shift()!;
+      attempt = Math.max(attempt, attempts);
+      chunks.push(blob);
+      size += blob.size;
+    }
+    if (!chunks.length) return;
+
+    const blobType = chunks[0].type || 'audio/webm';
+    const blob = new Blob(chunks, { type: blobType });
+    transcribingRef.current = true;
+    try {
+      const buffer = await blob.arrayBuffer();
+      const base64 = arrayBufferToBase64(buffer);
+      const transcript = await window.ipcApi.transcribeAudio({ audioBase64: base64, mimeType: blob.type });
+      if (transcript) {
+        setAnswerText((prev) => {
+          if (!prev) return transcript.trim();
+          return `${prev.trim()} ${transcript.trim()}`.trim();
+        });
+      }
+    } catch (err) {
+      console.error('Transcription error', err);
+      const msg = err instanceof Error ? err.message : 'transcription failed';
+      setSpeechError(`Voice input error: ${msg}`);
+      // retry the same blob a couple times before giving up
+      const nextAttempt = attempt + 1;
+      if (nextAttempt <= 3) {
+        pendingChunksRef.current.unshift({ blob, attempts: nextAttempt });
+        setTimeout(() => drainTranscriptionQueue(), 800);
+      }
+    } finally {
+      transcribingRef.current = false;
+      if (pendingChunksRef.current.length) {
+        drainTranscriptionQueue();
+      }
+    }
+  }, []);
+
+  const startRecording = useCallback(async () => {
+    if (!canRecord || recording) return;
     setSpeechError(null);
-    const RecognitionCtor = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!RecognitionCtor) return;
-    stopListening();
-    const recognition = new RecognitionCtor();
-    recognition.continuous = false;
-    recognition.interimResults = true;
-    recognition.lang = 'en-US';
-    recognition.onresult = (event: any) => {
-      const transcript = Array.from(event.results)
-        .map((r: any) => r[0]?.transcript || '')
-        .join(' ')
-        .trim();
-      if (transcript) setAnswerText(transcript);
-    };
-    recognition.onerror = (event: any) => {
-      setSpeechError(event.error ? `Voice input error: ${event.error}` : 'Voice input error');
-      setListening(false);
-    };
-    recognition.onend = () => setListening(false);
-    recognition.start();
-    recognitionRef.current = recognition;
-    setListening(true);
-  }, [canListen, listening, stopListening]);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      activeStreamRef.current = stream;
+      pendingChunksRef.current = [];
+      transcribingRef.current = false;
+
+      recorder.ondataavailable = (event) => {
+        if (event.data?.size > 0) {
+          pendingChunksRef.current.push({ blob: event.data, attempts: 0 });
+          drainTranscriptionQueue();
+        }
+      };
+
+      recorder.onerror = (event) => {
+        console.error('Recorder error', event);
+        setSpeechError('Voice input error');
+        stopRecording();
+      };
+
+      recorder.onstop = async () => {
+        if (activeStreamRef.current) {
+          activeStreamRef.current.getTracks().forEach((t) => t.stop());
+          activeStreamRef.current = null;
+        }
+        drainTranscriptionQueue();
+      };
+
+      recorder.start(1500);
+      mediaRecorderRef.current = recorder;
+      setRecording(true);
+    } catch (err) {
+      console.error('Recording error', err);
+      setSpeechError('Microphone unavailable');
+      setRecording(false);
+    }
+  }, [canRecord, drainTranscriptionQueue, recording]);
 
   const loadQuestion = async () => {
     setLoadingQuestion(true);
@@ -94,7 +178,7 @@ export default function InterviewSessionPage({ session, onSaveResult, onEndSessi
       window.speechSynthesis.cancel();
       setSpeaking(false);
     }
-    stopListening();
+    stopRecording();
     try {
       const question = await window.ipcApi.generateQuestion({
         domain: session.userProfile.domain,
@@ -114,7 +198,7 @@ export default function InterviewSessionPage({ session, onSaveResult, onEndSessi
 
   const handleEvaluate = async () => {
     if (!currentQuestion || !answerText.trim()) return;
-    stopListening();
+    stopRecording();
     setEvaluating(true);
     setError(null);
     try {
@@ -145,9 +229,9 @@ export default function InterviewSessionPage({ session, onSaveResult, onEndSessi
   useEffect(() => {
     return () => {
       if (canSpeak) window.speechSynthesis.cancel();
-      stopListening();
+      stopRecording();
     };
-  }, [canSpeak, stopListening]);
+  }, [canSpeak, stopRecording]);
 
   const avgScore = useMemo(() => {
     if (!session.results.length) return null;
@@ -210,16 +294,16 @@ export default function InterviewSessionPage({ session, onSaveResult, onEndSessi
                 <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
                   <button
                     type="button"
-                    onClick={listening ? stopListening : startListening}
-                    disabled={!canListen || evaluating || loadingQuestion}
+                    onClick={recording ? stopRecording : startRecording}
+                    disabled={!canRecord || evaluating || loadingQuestion}
                   >
-                    {listening ? 'Listening…' : 'Start microphone'}
+                    {recording ? 'Recording…' : 'Start microphone'}
                   </button>
                   <button
                     type="button"
                     className="subtle-button"
                     onClick={() => {
-                      stopListening();
+                      stopRecording();
                       setTextMode(true);
                     }}
                     disabled={evaluating}
@@ -242,7 +326,7 @@ export default function InterviewSessionPage({ session, onSaveResult, onEndSessi
                   type="button"
                   className="subtle-button"
                   onClick={() => {
-                    stopListening();
+                    stopRecording();
                     setTextMode(false);
                   }}
                   disabled={evaluating}

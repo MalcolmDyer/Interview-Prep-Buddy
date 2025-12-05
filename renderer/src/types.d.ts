@@ -5,6 +5,7 @@ declare global {
     ipcApi: {
       generateQuestion: (params: GenerateQuestionParams) => Promise<Question>;
       evaluateAnswer: (params: EvaluateAnswerParams) => Promise<Feedback>;
+      transcribeAudio: (payload: { audioBase64: string; mimeType?: string }) => Promise<string>;
     };
   }
 }
