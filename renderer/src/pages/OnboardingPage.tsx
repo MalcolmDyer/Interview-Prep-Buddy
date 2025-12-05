@@ -32,29 +32,28 @@ export default function OnboardingPage({ onStart, lastSession }: Props) {
   };
 
   return (
-    <div className="card" style={{ maxWidth: 820, margin: '40px auto' }}>
-      <div className="section-title">
-        <div>
-          <div className="badge">Interview Prep Buddy</div>
-          <h1>Design your interview run</h1>
-          <p className="muted-text">Tailor the interviewer to your domain, seniority, and company target.</p>
-        </div>
-        {lastSessionLabel && <div className="badge">Last: {lastSessionLabel}</div>}
+    <div className="card" style={{ maxWidth: 880, margin: '32px auto' }}>
+      <div className="stack" style={{ gap: 6 }}>
+        <div className="badge">Interview Prep Buddy</div>
+        <h1>Set up your run</h1>
+        <p className="muted-text">Pick the focus, level, and company. We’ll handle the questions and scoring.</p>
+        {lastSessionLabel && <div className="badge">Last session: {lastSessionLabel}</div>}
       </div>
 
-      <form onSubmit={handleSubmit}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-          <div>
-            <label>Domain</label>
-            <select value={domain} onChange={(e) => setDomain(e.target.value)}>
-              {domains.map((d) => (
-                <option key={d} value={d}>
-                  {d}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
+      <form onSubmit={handleSubmit} className="stack" style={{ marginTop: 22, gap: 16 }}>
+        <div className="surface stack" style={{ gap: 12 }}>
+          <label>Domain</label>
+          <select value={domain} onChange={(e) => setDomain(e.target.value)}>
+            {domains.map((d) => (
+              <option key={d} value={d}>
+                {d}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="surface">
+          <div className="stack" style={{ gap: 10 }}>
             <label>Seniority</label>
             <div className="pills">
               {levels.map((lvl) => (
@@ -71,23 +70,25 @@ export default function OnboardingPage({ onStart, lastSession }: Props) {
           </div>
         </div>
 
-        <div style={{ marginTop: 18 }}>
-          <label>Session type</label>
-          <div className="pills">
-            {sessionTypes.map((type) => (
-              <div
-                key={type}
-                className={`pill ${sessionType === type ? 'active' : ''}`}
-                onClick={() => setSessionType(type)}
-                role="button"
-              >
-                {type.replace('_', ' ')}
-              </div>
-            ))}
+        <div className="surface">
+          <div className="stack" style={{ gap: 10 }}>
+            <label>Session type</label>
+            <div className="pills">
+              {sessionTypes.map((type) => (
+                <div
+                  key={type}
+                  className={`pill ${sessionType === type ? 'active' : ''}`}
+                  onClick={() => setSessionType(type)}
+                  role="button"
+                >
+                  {type.replace('_', ' ')}
+                </div>
+              ))}
+            </div>
           </div>
         </div>
 
-        <div style={{ marginTop: 18 }}>
+        <div className="surface stack" style={{ gap: 10 }}>
           <label>Target company (optional)</label>
           <input
             type="text"
@@ -97,8 +98,8 @@ export default function OnboardingPage({ onStart, lastSession }: Props) {
           />
         </div>
 
-        <div style={{ marginTop: 22, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div className="muted-text">AI is powered by the managed proxy—no setup needed.</div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+          <div className="muted-text">Proxy-backed AI. Just start and talk.</div>
           <button type="submit" disabled={!canStart}>
             Start session
           </button>

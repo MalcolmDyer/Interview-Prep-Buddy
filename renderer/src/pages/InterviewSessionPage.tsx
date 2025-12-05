@@ -18,6 +18,7 @@ export default function InterviewSessionPage({ session, onSaveResult, onEndSessi
   const [speechError, setSpeechError] = useState<string | null>(null);
   const [speaking, setSpeaking] = useState(false);
   const [listening, setListening] = useState(false);
+  const [textMode, setTextMode] = useState(false);
   const recognitionRef = useRef<any>(null);
 
   const canSpeak = typeof window !== 'undefined' && 'speechSynthesis' in window;
@@ -86,6 +87,7 @@ export default function InterviewSessionPage({ session, onSaveResult, onEndSessi
     setError(null);
     setSpeechError(null);
     setModelOpen(false);
+    setTextMode(false);
     if (canSpeak) {
       window.speechSynthesis.cancel();
       setSpeaking(false);
@@ -150,27 +152,29 @@ export default function InterviewSessionPage({ session, onSaveResult, onEndSessi
   }, [session.results]);
 
   return (
-    <div>
-      <div className="top-bar">
-        <div>
-          <div className="badge">Live session</div>
-          <h2>
-            {session.userProfile.domain} · {session.userProfile.experienceLevel} · {session.userProfile.sessionType}
-          </h2>
-        </div>
-        <div className="chip-row">
-          {avgScore && <div className="badge">Avg: {avgScore}</div>}
-          <button className="subtle-button" onClick={onEndSession}>End session</button>
+    <div className="stack" style={{ gap: 16 }}>
+      <div className="card">
+        <div className="section-title">
+          <div className="stack" style={{ gap: 6 }}>
+            <div className="badge">Live session</div>
+            <h2>
+              {session.userProfile.domain} · {session.userProfile.experienceLevel} · {session.userProfile.sessionType}
+            </h2>
+          </div>
+          <div className="chip-row">
+            {avgScore && <div className="badge">Avg: {avgScore}</div>}
+            <button className="subtle-button" onClick={onEndSession}>End</button>
+          </div>
         </div>
       </div>
 
       <div className="split">
-        <div className="card">
+        <div className="card stack" style={{ gap: 12 }}>
           <div className="section-title">
             <h3>Question</h3>
             <div className="chip-row">
               <button className="subtle-button" type="button" onClick={loadQuestion} disabled={loadingQuestion}>
-                {loadingQuestion ? 'Generating…' : 'Next question'}
+                {loadingQuestion ? 'Next up…' : 'Next question'}
               </button>
               <button
                 className="subtle-button"
@@ -178,40 +182,78 @@ export default function InterviewSessionPage({ session, onSaveResult, onEndSessi
                 onClick={speakQuestion}
                 disabled={!canSpeak || loadingQuestion || !currentQuestion || speaking}
               >
-                {speaking ? 'Playing…' : 'Read aloud'}
+                {speaking ? 'Reading…' : 'Read aloud'}
               </button>
             </div>
           </div>
-          <div className="list-card">
+          <div className="surface">
             {loadingQuestion && <div className="muted-text">Generating question…</div>}
-            {!loadingQuestion && currentQuestion && <p style={{ fontSize: '1.1rem', lineHeight: 1.5 }}>{currentQuestion.text}</p>}
+            {!loadingQuestion && currentQuestion && <p style={{ fontSize: '1.08rem', lineHeight: 1.55 }}>{currentQuestion.text}</p>}
           </div>
 
           <div style={{ marginTop: 12 }}>
-            <label>Your answer</label>
-            <textarea
-              className="answer-box"
-              value={answerText}
-              onChange={(e) => setAnswerText(e.target.value)}
-              placeholder="Draft your response here"
-              disabled={loadingQuestion || evaluating}
-            />
+            <label>{textMode ? 'Type your answer' : 'Voice answer'}</label>
+            {!textMode && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div className="surface" style={{ minHeight: 80 }}>
+                  {answerText ? (
+                    <p style={{ margin: 0 }}>{answerText}</p>
+                  ) : (
+                    <div className="muted-text">Speak to capture your answer. Transcription will appear here.</div>
+                  )}
+                </div>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <button
+                    type="button"
+                    onClick={listening ? stopListening : startListening}
+                    disabled={!canListen || evaluating || loadingQuestion}
+                  >
+                    {listening ? 'Listening…' : 'Start microphone'}
+                  </button>
+                  <button
+                    type="button"
+                    className="subtle-button"
+                    onClick={() => {
+                      stopListening();
+                      setTextMode(true);
+                    }}
+                    disabled={evaluating}
+                  >
+                    Type answer instead
+                  </button>
+                </div>
+              </div>
+            )}
+            {textMode && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <textarea
+                  className="answer-box"
+                  value={answerText}
+                  onChange={(e) => setAnswerText(e.target.value)}
+                  placeholder="Draft your response here"
+                  disabled={loadingQuestion || evaluating}
+                />
+                <button
+                  type="button"
+                  className="subtle-button"
+                  onClick={() => {
+                    stopListening();
+                    setTextMode(false);
+                  }}
+                  disabled={evaluating}
+                >
+                  Use microphone
+                </button>
+              </div>
+            )}
           </div>
 
-          <div style={{ marginTop: 12, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <div style={{ marginTop: 8, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
             <button type="button" onClick={handleEvaluate} disabled={!answerText.trim() || evaluating || loadingQuestion}>
               {evaluating ? 'Scoring…' : 'Submit answer'}
             </button>
             <button type="button" className="subtle-button" onClick={() => setAnswerText('')} disabled={evaluating}>
               Clear
-            </button>
-            <button
-              type="button"
-              className="subtle-button"
-              onClick={listening ? stopListening : startListening}
-              disabled={!canListen || evaluating || loadingQuestion}
-            >
-              {listening ? 'Stop voice input' : 'Speak answer'}
             </button>
           </div>
           {speechError && (
@@ -222,7 +264,7 @@ export default function InterviewSessionPage({ session, onSaveResult, onEndSessi
           {error && <div className="badge" style={{ background: 'rgba(248,113,113,0.12)', color: '#fecdd3' }}>{error}</div>}
         </div>
 
-        <div className="card">
+        <div className="card stack" style={{ gap: 12 }}>
           <div className="section-title">
             <h3>Feedback</h3>
             <div className="badge">Live scoring</div>
