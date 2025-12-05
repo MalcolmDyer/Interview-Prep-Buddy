@@ -176,19 +176,20 @@ export default function InterviewSessionPage({ session, onSaveResult, onEndSessi
               <button className="subtle-button" type="button" onClick={loadQuestion} disabled={loadingQuestion}>
                 {loadingQuestion ? 'Next up…' : 'Next question'}
               </button>
-              <button
-                className="subtle-button"
-                type="button"
-                onClick={speakQuestion}
-                disabled={!canSpeak || loadingQuestion || !currentQuestion || speaking}
-              >
-                {speaking ? 'Reading…' : 'Read aloud'}
-              </button>
             </div>
           </div>
-          <div className="surface">
+          <div className="surface" style={{ position: 'relative', paddingBottom: 64 }}>
             {loadingQuestion && <div className="muted-text">Generating question…</div>}
             {!loadingQuestion && currentQuestion && <p style={{ fontSize: '1.08rem', lineHeight: 1.55 }}>{currentQuestion.text}</p>}
+            <button
+              className="subtle-button"
+              type="button"
+              onClick={speakQuestion}
+              disabled={!canSpeak || loadingQuestion || !currentQuestion || speaking}
+              style={{ position: 'absolute', right: 12, bottom: 12, boxShadow: '0 8px 24px rgba(0,0,0,0.25)' }}
+            >
+              {speaking ? 'Reading…' : 'Read aloud'}
+            </button>
           </div>
 
           <div style={{ marginTop: 12 }}>
