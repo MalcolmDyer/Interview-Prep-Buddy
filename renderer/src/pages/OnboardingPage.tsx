@@ -6,12 +6,11 @@ interface Props {
   lastSession: SessionRecord | null;
 }
 
-const domains = ['Software Engineering', 'Data Science', 'Product Management', 'Aerospace', 'Finance', 'Consulting'];
 const sessionTypes: SessionType[] = ['behavioral', 'technical', 'mixed', 'quick_drill'];
 const levels: ExperienceLevel[] = ['entry', 'mid', 'senior'];
 
 export default function OnboardingPage({ onStart, lastSession }: Props) {
-  const [domain, setDomain] = useState<string>(lastSession?.userProfile.domain || domains[0]);
+  const [domain, setDomain] = useState<string>(lastSession?.userProfile.domain || '');
   const [sessionType, setSessionType] = useState<SessionType>(lastSession?.userProfile.sessionType || 'technical');
   const [experienceLevel, setExperienceLevel] = useState<ExperienceLevel>(
     lastSession?.userProfile.experienceLevel || 'mid'
@@ -43,13 +42,12 @@ export default function OnboardingPage({ onStart, lastSession }: Props) {
       <form onSubmit={handleSubmit} className="stack" style={{ marginTop: 22, gap: 16 }}>
         <div className="surface stack" style={{ gap: 12 }}>
           <label>Domain</label>
-          <select value={domain} onChange={(e) => setDomain(e.target.value)}>
-            {domains.map((d) => (
-              <option key={d} value={d}>
-                {d}
-              </option>
-            ))}
-          </select>
+          <input
+            type="text"
+            value={domain}
+            onChange={(e) => setDomain(e.target.value)}
+            placeholder="e.g., Software Engineering, Data Science, FinOps"
+          />
         </div>
 
         <div className="surface">
