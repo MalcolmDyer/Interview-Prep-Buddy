@@ -93,11 +93,8 @@ app.post('/transcribe', async (req: Request, res: Response) => {
       language: 'en'
     });
 
-    if (!response?.text) {
-      return res.status(502).json({ error: 'Upstream transcription missing text' });
-    }
-
-    return res.json({ text: response.text });
+    const text = response?.text ?? '';
+    return res.json({ text });
   } catch (err) {
     console.error('Proxy /transcribe error', err);
     return res.status(500).json({ error: 'Proxy error', detail: (err as Error).message });
