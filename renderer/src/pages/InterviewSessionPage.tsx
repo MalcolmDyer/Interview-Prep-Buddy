@@ -18,7 +18,6 @@ interface Props {
 }
 
 export default function InterviewSessionPage({ session, onSaveResult, onEndSession }: Props) {
-  const MIN_CHUNK_BYTES = 16000;
   const [currentQuestion, setCurrentQuestion] = useState<Question | null>(null);
   const [answerText, setAnswerText] = useState('');
   const [loadingQuestion, setLoadingQuestion] = useState(false);
@@ -33,8 +32,10 @@ export default function InterviewSessionPage({ session, onSaveResult, onEndSessi
   const [viewMode, setViewMode] = useState<'question' | 'feedback'>('question');
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const activeStreamRef = useRef<MediaStream | null>(null);
-  const pendingChunksRef = useRef<Array<{ blob: Blob; attempts: number }>>([]);
+  const headerChunkRef = useRef<Blob | null>(null);
+  const latestChunkRef = useRef<Blob | null>(null);
   const transcribingRef = useRef(false);
+  const transcriptionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const canSpeak = typeof window !== 'undefined' && 'speechSynthesis' in window;
   const canRecord = typeof window !== 'undefined' && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
@@ -70,61 +71,42 @@ export default function InterviewSessionPage({ session, onSaveResult, onEndSessi
     window.speechSynthesis.speak(utterance);
   }, [canSpeak, currentQuestion]);
 
-  const arrayBufferToBase64 = (buffer: ArrayBuffer) => {
-    let binary = '';
-    const bytes = new Uint8Array(buffer);
-    const len = bytes.byteLength;
-    for (let i = 0; i < len; i += 1) {
-      binary += String.fromCharCode(bytes[i]);
-    }
-    return btoa(binary);
-  };
-
-  const drainTranscriptionQueue = useCallback(async () => {
+  const requestTranscription = useCallback(async () => {
     if (transcribingRef.current) return;
-    if (!pendingChunksRef.current.length) return;
+    if (!headerChunkRef.current || !latestChunkRef.current) return;
 
-    let chunks: Blob[] = [];
-    let size = 0;
-    let attempt = 0;
-    while (pendingChunksRef.current.length && size < MIN_CHUNK_BYTES) {
-      const { blob, attempts } = pendingChunksRef.current.shift()!;
-      attempt = Math.max(attempt, attempts);
-      chunks.push(blob);
-      size += blob.size;
-    }
-    if (!chunks.length) return;
-
-    const blobType = chunks[0].type || 'audio/webm';
-    const blob = new Blob(chunks, { type: blobType });
+    const blobType = headerChunkRef.current.type || 'audio/webm';
+    const blob = new Blob([headerChunkRef.current, latestChunkRef.current], { type: blobType });
     transcribingRef.current = true;
     try {
       const buffer = await blob.arrayBuffer();
       const base64 = arrayBufferToBase64(buffer);
       const transcript = await window.ipcApi.transcribeAudio({ audioBase64: base64, mimeType: blob.type });
       if (transcript) {
-        setAnswerText((prev) => {
-          if (!prev) return transcript.trim();
-          return `${prev.trim()} ${transcript.trim()}`.trim();
-        });
+          setAnswerText((prev) => {
+            if (!prev) return transcript.trim();
+            return `${prev.trim()} ${transcript.trim()}`.trim();
+          });
       }
     } catch (err) {
       console.error('Transcription error', err);
       const msg = err instanceof Error ? err.message : 'transcription failed';
       setSpeechError(`Voice input error: ${msg}`);
-      // retry the same blob a couple times before giving up
-      const nextAttempt = attempt + 1;
-      if (nextAttempt <= 3) {
-        pendingChunksRef.current.unshift({ blob, attempts: nextAttempt });
-        setTimeout(() => drainTranscriptionQueue(), 800);
-      }
     } finally {
       transcribingRef.current = false;
-      if (pendingChunksRef.current.length) {
-        drainTranscriptionQueue();
-      }
     }
   }, []);
+
+  const scheduleTranscription = useCallback(() => {
+    if (transcribingRef.current) return;
+    if (transcriptionTimerRef.current) {
+      clearTimeout(transcriptionTimerRef.current);
+    }
+    transcriptionTimerRef.current = setTimeout(() => {
+      transcriptionTimerRef.current = null;
+      requestTranscription();
+    }, 500);
+  }, [requestTranscription]);
 
   const startRecording = useCallback(async () => {
     if (!canRecord || recording) return;
@@ -133,13 +115,17 @@ export default function InterviewSessionPage({ session, onSaveResult, onEndSessi
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
       activeStreamRef.current = stream;
-      pendingChunksRef.current = [];
+      headerChunkRef.current = null;
+      latestChunkRef.current = null;
       transcribingRef.current = false;
 
       recorder.ondataavailable = (event) => {
         if (event.data?.size > 0) {
-          pendingChunksRef.current.push({ blob: event.data, attempts: 0 });
-          drainTranscriptionQueue();
+          if (!headerChunkRef.current) {
+            headerChunkRef.current = event.data;
+          }
+          latestChunkRef.current = event.data;
+          scheduleTranscription();
         }
       };
 
@@ -154,10 +140,10 @@ export default function InterviewSessionPage({ session, onSaveResult, onEndSessi
           activeStreamRef.current.getTracks().forEach((t) => t.stop());
           activeStreamRef.current = null;
         }
-        drainTranscriptionQueue();
+        requestTranscription();
       };
 
-      recorder.start(1500);
+      recorder.start(1000);
       mediaRecorderRef.current = recorder;
       setRecording(true);
     } catch (err) {
@@ -165,7 +151,7 @@ export default function InterviewSessionPage({ session, onSaveResult, onEndSessi
       setSpeechError('Microphone unavailable');
       setRecording(false);
     }
-  }, [canRecord, drainTranscriptionQueue, recording]);
+  }, [canRecord, recording, scheduleTranscription, stopRecording]);
 
   const loadQuestion = async () => {
     setLoadingQuestion(true);
@@ -174,6 +160,8 @@ export default function InterviewSessionPage({ session, onSaveResult, onEndSessi
     setModelOpen(false);
     setTextMode(false);
     setViewMode('question');
+    headerChunkRef.current = null;
+    latestChunkRef.current = null;
     if (canSpeak) {
       window.speechSynthesis.cancel();
       setSpeaking(false);
@@ -222,6 +210,8 @@ export default function InterviewSessionPage({ session, onSaveResult, onEndSessi
     setFeedback(null);
     setAnswerText('');
     setViewMode('question');
+    headerChunkRef.current = null;
+    latestChunkRef.current = null;
     loadQuestion();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.id]);

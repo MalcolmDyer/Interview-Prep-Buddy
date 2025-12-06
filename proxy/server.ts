@@ -89,7 +89,8 @@ app.post('/transcribe', async (req: Request, res: Response) => {
     const file = await toFile(audioBuffer, `audio.${extension}`, { type: fileType });
     const response = await openai.audio.transcriptions.create({
       file,
-      model: 'whisper-1'
+      model: 'whisper-1',
+      language: 'en'
     });
 
     if (!response?.text) {
