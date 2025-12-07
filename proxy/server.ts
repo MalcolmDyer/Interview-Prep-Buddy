@@ -8,6 +8,7 @@ const port = process.env.PORT || 3000;
 const apiKey = process.env.OPENAI_API_KEY || process.env.AI_API_KEY;
 const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 const openai = apiKey ? new OpenAI({ apiKey }) : null;
+const REQUEST_TIMEOUT_MS = 30000;
 
 app.use(cors());
 app.use(express.json({ limit: '20mb' }));
@@ -27,6 +28,8 @@ app.post('/chat', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'messages array required' });
     }
 
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -38,8 +41,10 @@ app.post('/chat', async (req: Request, res: Response) => {
         temperature,
         messages,
         response_format: response_format ?? { type: 'text' }
-      })
+      }),
+      signal: controller.signal
     });
+    clearTimeout(timeout);
 
     if (!response.ok) {
       const text = await response.text();
@@ -87,11 +92,19 @@ app.post('/transcribe', async (req: Request, res: Response) => {
     const extension = fileType.split('/')[1] || 'webm';
 
     const file = await toFile(audioBuffer, `audio.${extension}`, { type: fileType });
-    const response = await openai.audio.transcriptions.create({
-      file,
-      model: 'whisper-1',
-      language: 'en'
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    const response = await openai.audio.transcriptions.create(
+      {
+        file,
+        model: 'whisper-1',
+        language: 'en'
+      },
+      {
+        signal: controller.signal
+      }
+    );
+    clearTimeout(timeout);
 
     const text = response?.text ?? '';
     return res.json({ text });

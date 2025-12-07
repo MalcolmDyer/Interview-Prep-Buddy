@@ -28,14 +28,16 @@ export default function InterviewSessionPage({ session, onSaveResult, onEndSessi
   const [speechError, setSpeechError] = useState<string | null>(null);
   const [speaking, setSpeaking] = useState(false);
   const [recording, setRecording] = useState(false);
+  const [recordingStartedAt, setRecordingStartedAt] = useState<number | null>(null);
+  const [recordingElapsed, setRecordingElapsed] = useState(0);
   const [textMode, setTextMode] = useState(false);
   const [viewMode, setViewMode] = useState<'question' | 'feedback'>('question');
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const activeStreamRef = useRef<MediaStream | null>(null);
-  const headerChunkRef = useRef<Blob | null>(null);
-  const latestChunkRef = useRef<Blob | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
   const transcribingRef = useRef(false);
   const transcriptionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   const canSpeak = typeof window !== 'undefined' && 'speechSynthesis' in window;
   const canRecord = typeof window !== 'undefined' && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
@@ -53,6 +55,7 @@ export default function InterviewSessionPage({ session, onSaveResult, onEndSessi
       activeStreamRef.current = null;
     }
     setRecording(false);
+    setRecordingStartedAt(null);
     transcribingRef.current = false;
   }, []);
 
@@ -73,20 +76,22 @@ export default function InterviewSessionPage({ session, onSaveResult, onEndSessi
 
   const requestTranscription = useCallback(async () => {
     if (transcribingRef.current) return;
-    if (!headerChunkRef.current || !latestChunkRef.current) return;
+    if (!chunksRef.current.length) return;
 
-    const blobType = headerChunkRef.current.type || 'audio/webm';
-    const blob = new Blob([headerChunkRef.current, latestChunkRef.current], { type: blobType });
+    const blobType = chunksRef.current[0].type || 'audio/webm';
+    const blob = new Blob(chunksRef.current, { type: blobType });
     transcribingRef.current = true;
     try {
       const buffer = await blob.arrayBuffer();
       const base64 = arrayBufferToBase64(buffer);
       const transcript = await window.ipcApi.transcribeAudio({ audioBase64: base64, mimeType: blob.type });
       if (transcript) {
-          setAnswerText((prev) => {
-            if (!prev) return transcript.trim();
-            return `${prev.trim()} ${transcript.trim()}`.trim();
-          });
+        setAnswerText(transcript.trim());
+        if (chunksRef.current.length >= 2) {
+          const first = chunksRef.current[0];
+          const last = chunksRef.current[chunksRef.current.length - 1];
+          chunksRef.current = [first, last];
+        }
       }
     } catch (err) {
       console.error('Transcription error', err);
@@ -115,16 +120,12 @@ export default function InterviewSessionPage({ session, onSaveResult, onEndSessi
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
       activeStreamRef.current = stream;
-      headerChunkRef.current = null;
-      latestChunkRef.current = null;
+      chunksRef.current = [];
       transcribingRef.current = false;
 
       recorder.ondataavailable = (event) => {
         if (event.data?.size > 0) {
-          if (!headerChunkRef.current) {
-            headerChunkRef.current = event.data;
-          }
-          latestChunkRef.current = event.data;
+          chunksRef.current.push(event.data);
           scheduleTranscription();
         }
       };
@@ -146,6 +147,7 @@ export default function InterviewSessionPage({ session, onSaveResult, onEndSessi
       recorder.start(1000);
       mediaRecorderRef.current = recorder;
       setRecording(true);
+      setRecordingStartedAt(Date.now());
     } catch (err) {
       console.error('Recording error', err);
       setSpeechError('Microphone unavailable');
@@ -160,8 +162,8 @@ export default function InterviewSessionPage({ session, onSaveResult, onEndSessi
     setModelOpen(false);
     setTextMode(false);
     setViewMode('question');
-    headerChunkRef.current = null;
-    latestChunkRef.current = null;
+    chunksRef.current = [];
+    setRecordingStartedAt(null);
     if (canSpeak) {
       window.speechSynthesis.cancel();
       setSpeaking(false);
@@ -210,8 +212,8 @@ export default function InterviewSessionPage({ session, onSaveResult, onEndSessi
     setFeedback(null);
     setAnswerText('');
     setViewMode('question');
-    headerChunkRef.current = null;
-    latestChunkRef.current = null;
+    chunksRef.current = [];
+    setRecordingStartedAt(null);
     loadQuestion();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.id]);
@@ -228,6 +230,31 @@ export default function InterviewSessionPage({ session, onSaveResult, onEndSessi
     const total = session.results.reduce((acc: number, r: QAResult) => acc + r.feedback.score, 0);
     return (total / session.results.length).toFixed(1);
   }, [session.results]);
+
+  useEffect(() => {
+    if (!canRecord) {
+      setTextMode(true);
+      setRecording(false);
+      setRecordingStartedAt(null);
+    }
+  }, [canRecord]);
+
+  useEffect(() => {
+    if (textMode && textareaRef.current) {
+      textareaRef.current.focus();
+    }
+  }, [textMode]);
+
+  useEffect(() => {
+    if (!recording || !recordingStartedAt) {
+      setRecordingElapsed(0);
+      return;
+    }
+    const id = setInterval(() => {
+      setRecordingElapsed(Math.max(0, Math.round((Date.now() - recordingStartedAt) / 1000)));
+    }, 500);
+    return () => clearInterval(id);
+  }, [recording, recordingStartedAt]);
 
   return (
     <div className="stack" style={{ gap: 16 }}>
@@ -289,6 +316,11 @@ export default function InterviewSessionPage({ session, onSaveResult, onEndSessi
                   >
                     {recording ? 'Recording…' : 'Start microphone'}
                   </button>
+                  {recording && (
+                    <div className="badge" style={{ background: 'rgba(16,185,129,0.12)', color: '#a7f3d0' }}>
+                      Listening {recordingElapsed}s
+                    </div>
+                  )}
                   <button
                     type="button"
                     className="subtle-button"
@@ -307,6 +339,7 @@ export default function InterviewSessionPage({ session, onSaveResult, onEndSessi
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <textarea
                   className="answer-box"
+                  ref={textareaRef}
                   value={answerText}
                   onChange={(e) => setAnswerText(e.target.value)}
                   placeholder="Draft your response here"
@@ -323,6 +356,11 @@ export default function InterviewSessionPage({ session, onSaveResult, onEndSessi
                 >
                   Use microphone
                 </button>
+              </div>
+            )}
+            {!canRecord && (
+              <div className="badge" style={{ background: 'rgba(248,113,113,0.12)', color: '#fecdd3' }}>
+                Microphone unavailable. Switch to typing or enable mic in system settings.
               </div>
             )}
           </div>

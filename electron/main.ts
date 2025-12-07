@@ -66,7 +66,7 @@ async function transcribeAudio(audioBase64: string, mimeType?: string): Promise<
 
   const data = await response.json();
   const text = data?.text;
-  if (!text || typeof text !== 'string') {
+  if (typeof text !== 'string') {
     throw new Error('Transcription response missing text');
   }
   return text;
